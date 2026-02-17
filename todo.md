@@ -2,24 +2,20 @@ Wiki Reference:
 
 https://wiki.archlinux.org/title/System_maintenance
 
----
-
-check that dependencies are installed
-
-report any that are not installed
-  - "reflector is required for '7) Update mirror list'"
 
 ---
 
 check for new packages not included in setup script
+- List explicitly-installed packages that are not found in 'pkg_list' (from A.S.S.)
+    - offer to selectively uninstall or add them to (pkg_list)
 
-offer to add them to the setup script
+A.S.S is a dependency for this util
 
 ---
 
 Scan root dir with ncdu
 
-Add ncdu to dependancies in readme
+- Offer to analyse disk usage with `ncdu`. (`ncdu / --exclude /mnt --exclude /media`)
 
 ---
 
@@ -29,4 +25,4 @@ Also fix it so it can work for nvme volumes.
 
 ---
 
-
+- Check git repos for un-synced changes

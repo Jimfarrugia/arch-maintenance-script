@@ -20,4 +20,4 @@ curl -s "$ARCH_RSS_FEED" |
     printf ' - \e]8;;%s\a%s\e]8;;\a\n' "$link" "$title"
   done
 
-exec $(dirname $(dirname $(realpath $0)))/run.sh
+exec $(dirname $(dirname $(realpath $0)))/run.sh -q

@@ -35,4 +35,4 @@ else
   echo "The yay package can be found in the AUR repository at the following link : https://aur.archlinux.org/packages/yay/"
 fi
 
-exec $(dirname $(dirname $(realpath $0)))/run.sh
+exec $(dirname $(dirname $(realpath $0)))/run.sh -q

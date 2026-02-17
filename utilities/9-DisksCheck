@@ -87,5 +87,5 @@
     fi
 
 
-    exec $(dirname $(dirname $(realpath $0)))/run.sh
+    exec $(dirname $(dirname $(realpath $0)))/run.sh -q
 

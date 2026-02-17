@@ -6,4 +6,4 @@ echo "If needed, press Q to exit."
 echo -e "\n"
 systemctl --failed
 
-exec $(dirname $(dirname $(realpath $0)))/run.sh
+exec $(dirname $(dirname $(realpath $0)))/run.sh -q

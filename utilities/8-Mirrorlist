@@ -10,4 +10,4 @@ sudo cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.backup &&
 sudo reflector -c Australia -a 6 --sort rate --verbose --save /etc/pacman.d/mirrorlist
 
 # Return to menu
-exec $(dirname $(dirname $(realpath $0)))/run.sh
+exec $(dirname $(dirname $(realpath $0)))/run.sh -q
