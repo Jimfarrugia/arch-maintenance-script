@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+ARCH_RSS_FEED="https://archlinux.org/feeds/news/"
+ARCH_NEWS_URL="https://archlinux.org/news/"
+
+echo
+
+# Print clickable header
+printf '\e]8;;%s\a%s\e]8;;\a\n' \
+  "$ARCH_NEWS_URL" \
+  "Arch Linux News:"
+
+# Fetch and print latest news
+curl -s "$ARCH_RSS_FEED" |
+  xmlstarlet sel -T -t \
+    -m "//item" \
+    -v "normalize-space(title)" -o "|" \
+    -v "link" -n |
+  while IFS="|" read -r title link; do
+    printf ' - \e]8;;%s\a%s\e]8;;\a\n' "$link" "$title"
+  done
+
+exec $(dirname $(dirname $(realpath $0)))/run.sh

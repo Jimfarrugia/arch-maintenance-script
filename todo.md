@@ -4,6 +4,13 @@ https://wiki.archlinux.org/title/System_maintenance
 
 ---
 
+check that dependencies are installed
+
+report any that are not installed
+  - "reflector is required for '7) Update mirror list'"
+
+---
+
 check for new packages not included in setup script
 
 offer to add them to the setup script
