@@ -1,0 +1,8 @@
+#!/bin/bash
+
+    echo -e "\n"
+    echo "Upgrading official packages..."
+    sudo pacman -Syu
+
+
+    exec $(dirname $(dirname $(realpath $0)))/run.sh
