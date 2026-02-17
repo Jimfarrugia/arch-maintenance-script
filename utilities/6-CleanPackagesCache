@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo -e "\n"
             echo "Clean cache of all packages or limit to uninstalled packages ?"

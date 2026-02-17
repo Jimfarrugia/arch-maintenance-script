@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 chmod u+x -R $(dirname $(realpath $0))/utilities/
 
