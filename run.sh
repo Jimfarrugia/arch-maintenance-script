@@ -25,6 +25,7 @@ declare -A Dependencies=(
   ["pacman-contrib"]=false
   ["reflector"]=false
   ["smartmontools"]=false
+  ["gum"]=false
   ["ncdu"]=false
 )
 
@@ -35,6 +36,7 @@ declare -A DepReason=(
   ["pacman-contrib"]="required for cleaning the packages cache."
   ["reflector"]="required for updating mirror list."
   ["smartmontools"]="required for checking disks health."
+  ["gum"]="required for displaying packages select menu."
   ["ncdu"]="required for analyzing disk usage."
 )
 
@@ -45,15 +47,16 @@ declare -A DepReason=(
 #   shell:<command> => run a shell command (no exec)
 #   exit            => exit 0
 MENU_ITEMS=(
-  "Check Arch Linux news|curl xmlstarlet|util:1-CheckArchNews"
-  "Check for failed systemd services||util:2-CheckFailedSystemd"
-  "Check for errors in the log files||util:3-CheckLogFiles"
-  "Upgrade official packages||util:4-OfficialUpgrade"
-  "Upgrade AUR packages|yay|util:5-AURupgrade"
-  "Check for orphaned packages||util:6-OrphanedCheck"
-  "Clean packages cache|pacman-contrib|util:7-CleanPackagesCache"
-  "Update mirror list|reflector|util:8-Mirrorlist"
-  "Check disks health|smartmontools|util:9-DisksCheck"
+  "Check Arch Linux news|curl xmlstarlet|util:01-CheckArchNews"
+  "Check for failed systemd services||util:02-CheckFailedSystemd"
+  "Check for errors in the log files||util:03-CheckLogFiles"
+  "Upgrade official packages||util:04-OfficialUpgrade"
+  "Upgrade AUR packages|yay|util:05-AURupgrade"
+  "Check for orphaned packages||util:06-OrphanedCheck"
+  "Clean packages cache|pacman-contrib|util:07-CleanPackagesCache"
+  "Update mirror list|reflector|util:08-Mirrorlist"
+  "Check disks health|smartmontools|util:09-DisksCheck"
+  "Add new packages to setup script|gum|util:10-UpdatePackageList"
   "Reboot||shell:reboot"
   "Quit||exit"
 )

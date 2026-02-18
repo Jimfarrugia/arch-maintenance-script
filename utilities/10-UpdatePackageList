@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+
+RED=$'\e[31m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+DE=""
+ASS_PATH="${HOME}/Projects/arch-setup-script"
+PKG_LIST_UNIVERSAL="$ASS_PATH/packages/pkg_list_universal.txt"
+PKG_LIST_DE=""
+
+# Temp files
+TMP_DIR="$(mktemp -d)"
+PKG_LIST_LOCAL="$TMP_DIR/local"
+PKG_LIST_FILTERED="$TMP_DIR/filtered"
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+# Display multiselect menu with gum
+gum_multiselect() {
+  # $1: Header text displayed above the menu
+  local header="$1"
+
+  gum choose \
+    --no-limit \
+    --header "$(printf '\e[33m%s\e[0m' "$header")" \
+    --cursor "➜ " \
+    --selected-prefix "[x] " \
+    --unselected-prefix "[ ] "
+}
+
+# Prompt for a boolean (yes/no) response
+prompt_boolean() {
+  local prompt_text="$1"
+  local __resultvar="$2"
+  local answer
+
+  while true; do
+    read -r -p "$prompt_text [y/N]: " answer
+    echo >&2
+    case "$answer" in
+    [yY])
+      printf -v "$__resultvar" true
+      break
+      ;;
+    [nN] | "")
+      printf -v "$__resultvar" false
+      break
+      ;;
+    *)
+      echo "Invalid selection." >&2
+      echo >&2
+      ;;
+    esac
+  done
+}
+echo
+
+# Select new packages to add to A.S.S package list
+# Add the selected packages to the universal package list after confirmation
+# Commit and push the updated list after confirmation.
+update_pkg_list() {
+  # $1: label (e.g. "universal" or "Hyprland")
+  # $2: path to list file
+  # $3: newline-delimited selected packages
+  local label="$1"
+  local list_path="$2"
+  local selected="$3"
+  local confirm_add_pkgs confirm_push
+
+  if [[ -z "$selected" ]]; then
+    echo >&2
+    echo "No ${label} packages selected." >&2
+    echo >&2
+    return 0
+  fi
+
+  echo >&2
+  echo "Selected packages:" >&2
+  echo "$selected" >&2
+  echo >&2
+
+  prompt_boolean \
+    "Are you sure you want to add these to the A.S.S. ${YELLOW}${label}${RESET} package list?" \
+    confirm_add_pkgs
+
+  if ! "$confirm_add_pkgs"; then
+    echo -e "${YELLOW}${label} package list was not changed.${RESET}" >&2
+    return 0
+  fi
+
+  local new_list
+  new_list="$(mktemp -p "$TMP_DIR" "new_${label}_list.XXXXXX")"
+
+  cat "$list_path" <(printf '%s\n' "$selected") |
+    sed '/^\s*$/d' |
+    sort -u >"$new_list"
+
+  if cmp -s "$new_list" "$list_path"; then
+    echo -e "${YELLOW}No changes needed — ${label} list already contained those packages.${RESET}" >&2
+    rm -f "$new_list"
+    return 0
+  fi
+
+  mv "$new_list" "$list_path"
+  echo -e "✅ Updated A.S.S. ${YELLOW}${label}${RESET} package list." >&2
+
+  # Output applied set (for subtraction in next menu)
+  printf '%s\n' "$selected" | sed '/^\s*$/d'
+
+  echo >&2
+  prompt_boolean \
+    "Commit and push the updated ${YELLOW}${label}${RESET} package list to A.S.S.?" \
+    confirm_push
+
+  if ! "$confirm_push"; then
+    echo -e "${YELLOW}Skipped commit/push.${RESET}" >&2
+    return 0
+  fi
+
+  if git -C "$ASS_PATH" diff --quiet -- "$list_path"; then
+    echo -e "${YELLOW}Nothing to commit.${RESET}" >&2
+    return 0
+  fi
+
+  git -C "$ASS_PATH" add -- "$list_path"
+  local added_count
+  added_count="$(printf '%s\n' "$selected" | sed '/^\s*$/d' | wc -l)"
+  git -C "$ASS_PATH" commit -m "Update ${label} package list (+${added_count})" &&
+    git -C "$ASS_PATH" push
+}
+
+# Make sure A.S.S. directory exists
+if [[ ! -d "$ASS_PATH" ]]; then
+  echo -e "${RED}Error:${RESET} The 'Arch Setup Script' project must be present at ${ASS_PATH}"
+  echo
+
+  # Prompt to clone repo
+  prompt_boolean \
+    "Would you like to clone it now? ${YELLOW}(requires authenticated github-cli)${RESET}" \
+    clone_repo
+
+  # Clone repo or restart script
+  if "$clone_repo"; then
+    gh repo clone Jimfarrugia/arch-setup-script "$ASS_PATH"
+  else
+    exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+  fi
+fi
+
+# Make sure A.S.S. repo is up to date.
+if ! git -C "$ASS_PATH" pull --ff-only; then
+  echo -e "${RED}Error:${RESET} Failed to pull latest changes for 'Arch Setup Script'."
+  echo -e "${YELLOW}Manually update the repo before using this utility again.${RESET}"
+  # Go back to menu if git pull fails
+  exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+fi
+
+# Detect DE and path to A.S.S. DE package list
+for pkg in plasma-desktop hyprland; do
+  if pacman -Q "$pkg" &>/dev/null; then
+    case "$pkg" in
+    plasma-desktop)
+      DE="KDE"
+      PKG_LIST_DE="$ASS_PATH/packages/pkg_list_kde.txt"
+      ;;
+    hyprland)
+      DE="Hyprland"
+      PKG_LIST_DE="$ASS_PATH/packages/pkg_list_hyprland.txt"
+      ;;
+    esac
+    break
+  fi
+done
+
+# Get a list of explicitly installed (local) packages and save it to a temp file
+pacman -Qe | cut -d' ' -f1 >"$PKG_LIST_LOCAL"
+
+# Filter out graphics drivers, microcode, system-specific packages, etc
+# (anything that is installed inherently or conditionally by A.S.S.)
+# TODO: replace this with a reference to A.S.S. inherent packages list.
+EXCLUDE_PKGS=(
+  intel-ucode
+  amd-ucode
+  mesa
+  vulkan-radeon
+  vulkan-intel
+  vulkan-icd-loader
+  intel-media-driver
+  libva-mesa-driver
+  libva-intel-driver
+  virtualbox-guest-utils
+  libvdpau
+  git
+  base
+  base-devel
+  yay
+  yay-debug
+  acpi
+  tlp
+  keyd
+  dkms
+  broadcom-wl-dkms
+  linux-headers
+  spice-vdagent
+  tp_smapi
+)
+
+# Filter out local packages that are already included in A.S.S. package lists
+grep -Fxv -f "$PKG_LIST_UNIVERSAL" "$PKG_LIST_LOCAL" |
+  grep -Fxv -f "$PKG_LIST_DE" |
+  grep -Fxv -f <(printf '%s\n' "${EXCLUDE_PKGS[@]}") \
+    >"$PKG_LIST_FILTERED"
+
+# Build selectable list
+mapfile -t NEW_PKGS < <(grep -v '^\s*$' "$PKG_LIST_FILTERED")
+if ((${#NEW_PKGS[@]} == 0)); then
+  echo "No new packages."
+  exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+fi
+echo
+echo "Select new packages to add to A.S.S. (space to toggle, enter to confirm):"
+
+# Select universal packages to add
+new_universal_pkgs="$(printf '%s\n' "${NEW_PKGS[@]}" | gum_multiselect "Packages to add to UNIVERSAL package list:")"
+
+# Update the universal package list
+applied_universal_pkgs="$(update_pkg_list "universal" "$PKG_LIST_UNIVERSAL" "$new_universal_pkgs")"
+
+# Remove those newly added universal pkgs from the next selection menu
+mapfile -t REMAINING_PKGS < <(
+  comm -23 \
+    <(printf '%s\n' "${NEW_PKGS[@]}" | sort -u) \
+    <(printf '%s\n' "$applied_universal_pkgs" | sed '/^\s*$/d' | sort -u)
+)
+
+# Skip the rest if there is no DE package list
+if [[ -z "$PKG_LIST_DE" ]]; then
+  exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+fi
+
+# Skip the rest if there are no remaining packages
+if ((${#REMAINING_PKGS[@]} == 0)); then
+  echo "No remaining packages to consider for ${DE}."
+  exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+fi
+
+# Select DE packages to add
+new_de_pkgs="$(printf '%s\n' "${REMAINING_PKGS[@]}" | gum_multiselect "Packages to add to ${DE} package list:")"
+
+# Update the DE package list
+update_pkg_list "$DE" "$PKG_LIST_DE" "$new_de_pkgs" >/dev/null
+
+# Back to main menu
+exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q

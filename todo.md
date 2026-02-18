@@ -2,15 +2,6 @@ Wiki Reference:
 
 https://wiki.archlinux.org/title/System_maintenance
 
-
----
-
-check for new packages not included in setup script
-- List explicitly-installed packages that are not found in 'pkg_list' (from A.S.S.)
-    - offer to selectively uninstall or add them to (pkg_list)
-
-A.S.S is a dependency for this util
-
 ---
 
 Scan root dir with ncdu
