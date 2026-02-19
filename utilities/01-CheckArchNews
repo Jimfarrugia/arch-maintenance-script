@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+GREEN=$'\e[32m'
+RESET=$'\e[0m'
+
 ARCH_RSS_FEED="https://archlinux.org/feeds/news/"
 ARCH_NEWS_URL="https://archlinux.org/news/"
 
@@ -8,16 +11,20 @@ echo
 # Print clickable header
 printf '\e]8;;%s\a%s\e]8;;\a\n' \
   "$ARCH_NEWS_URL" \
-  "Arch Linux News:"
+  "${GREEN}Arch Linux News:${RESET}"
 
-# Fetch and print latest news
+# Fetch and print latest news with pubDate formatted as dd.mm.yyyy
 curl -s "$ARCH_RSS_FEED" |
   xmlstarlet sel -T -t \
     -m "//item" \
+    -v "normalize-space(pubDate)" -o "|" \
     -v "normalize-space(title)" -o "|" \
-    -v "link" -n |
-  while IFS="|" read -r title link; do
-    printf ' - \e]8;;%s\a%s\e]8;;\a\n' "$link" "$title"
+    -v "normalize-space(link)" -n |
+  while IFS="|" read -r pubdate title link; do
+    # Parse RFC822-ish date and format as dd.mm.yyyy (Arch feed uses "+0000")
+    date_fmt="$(LC_ALL=C date -d "$pubdate" +'%d.%m.%Y' 2>/dev/null || echo '??.??.????')"
+
+    printf ' - %s \e]8;;%s\a%s\e]8;;\a\n' "$date_fmt" "$link" "$title"
   done
 
-exec $(dirname $(dirname $(realpath $0)))/run.sh -q
+exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
