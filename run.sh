@@ -63,6 +63,7 @@ MENU_ITEMS=(
 
 # --- Colors ---
 RED=$'\e[31m'
+GREEN=$'\e[32m'
 YELLOW=$'\e[33m'
 DIM=$'\e[2m'
 RESET=$'\e[0m'
@@ -161,8 +162,8 @@ for item in "${MENU_ITEMS[@]}"; do
 done
 
 echo
-echo "Maintenance menu"
-echo "Select an option:"
+echo -e "${GREEN}Maintenance menu${RESET}"
+echo -e "${YELLOW}Select an option:${RESET}"
 
 select choice in "${menu_labels[@]}"; do
   idx=$((REPLY - 1))
