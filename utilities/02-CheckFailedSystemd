@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
-echo -e "\n"
-echo "Checking for failed systemd services..."
-echo "If needed, press Q to exit."
-echo -e "\n"
+GREEN=$'\e[32m'
+RESET=$'\e[0m'
+
+echo -e "\n${GREEN}Checking for failed systemd services...${RESET}"
+
 systemctl --failed
 
 exec $(dirname $(dirname $(realpath $0)))/run.sh -q
