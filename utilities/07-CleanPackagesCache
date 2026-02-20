@@ -1,22 +1,38 @@
 #!/usr/bin/env bash
 
-echo -e "\n"
-            echo "Clean cache of all packages or limit to uninstalled packages ?"
-            select CleanType in "All" "Uninstalled"; do
-                    echo "Enter the number of the most recent cached versions you want to keep :"
-                    read -r VersionNumber
-                        case $CleanType in
-                            All )
-                                echo "Cleaning packages cache..."
-                                sudo paccache -rk"$VersionNumber"
-                                break;;
-                            Uninstalled )
-                                echo "Cleaning packages cache..."
-                                sudo paccache -ruk"$VersionNumber"
-                                break;;
-                        esac
-            done
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
 
+echo -e "\n${YELLOW}Clean cache of all packages or just uninstalled packages?${RESET}"
 
-    exec $(dirname $(dirname $(realpath $0)))/run.sh -q
+# Configure options before using paccache to clean the package cache
+select packages_to_clean in "All" "Uninstalled"; do
+  echo -e "\n${YELLOW}How many of the most recent cached versions should be kept?${RESET}"
 
+  while true; do
+    read -r -p "Enter a number: " num_of_versions
+    # Validate input is a positive integer
+    if [[ "$num_of_versions" =~ ^(0|[1-9][0-9]*)$ ]]; then
+      break
+    else
+      echo -e "${RED}Invalid input.${RESET}"
+    fi
+  done
+
+  case $packages_to_clean in
+  All)
+    echo -e "\n${GREEN}Cleaning cache of ${YELLOW}all${RESET}${GREEN} packages (keep ${YELLOW}${num_of_versions}${RESET}${GREEN} versions)...${RESET}"
+    sudo paccache -rk "$num_of_versions"
+    break
+    ;;
+  Uninstalled)
+    echo -e "\n${GREEN}Cleaning cache of ${YELLOW}uninstalled${RESET}${GREEN} packages (keep ${YELLOW}${num_of_versions}${RESET}${GREEN} versions)...${RESET}"
+    sudo paccache -ruk "$num_of_versions"
+    break
+    ;;
+  esac
+done
+
+exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
