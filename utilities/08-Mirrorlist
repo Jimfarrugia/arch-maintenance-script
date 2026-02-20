@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 
-echo -e "\n"
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
 
-# Backup the mirror list
+# Backup the current mirror list
 sudo cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.backup &&
-  echo -e "Old mirror list saved to: /etc/pacman.d/mirrorlist.backup \n"
+  echo -e "${YELLOW}\nOld mirror list saved to:${RESET} /etc/pacman.d/mirrorlist.backup \n"
 
-# Generate a new updated mirror list with reflector
-sudo reflector -c Australia -a 6 --sort rate --verbose --save /etc/pacman.d/mirrorlist
+# Generate and save an updated mirror list with reflector
+sudo reflector -c Australia -a 6 --sort rate --verbose --save /etc/pacman.d/mirrorlist &&
+  echo -e "${GREEN}\nMirror list updated successfully.${RESET}"
 
 # Return to menu
 exec $(dirname $(dirname $(realpath $0)))/run.sh -q
