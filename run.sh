@@ -122,7 +122,7 @@ if [[ -n "$warning_message" ]] && ! $quiet; then
       install_deps=false
       break
       ;;
-    *) echo "Invalid selection." ;;
+    *) echo -e "${RED}Invalid option.${RESET}" ;;
     esac
   done
 
@@ -170,7 +170,7 @@ select choice in "${menu_labels[@]}"; do
 
   # validate selection
   [[ $idx -ge 0 && $idx -lt ${#menu_actions[@]} ]] || {
-    echo "Invalid option."
+    echo -e "${RED}Invalid option.${RESET}"
     continue
   }
 
