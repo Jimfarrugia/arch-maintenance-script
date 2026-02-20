@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# TODO: Fix this bullshit...
 echo -e "\n"
 if pacman -Qs "yay" | grep -q 'yay'; then
   if [ "$EUID" = 0 ]; then
