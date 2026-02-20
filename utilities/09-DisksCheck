@@ -1,91 +1,245 @@
 #!/usr/bin/env bash
+set -uEo pipefail
 
-    if pacman -Qs smartmontools | grep -q 'smartmontools'; then
-            while true; do
-            echo -e "\n"
-            echo "Test disks health or check disks health ?"
-            select DiskHealthChoice in "Test disks" "Check disks" "Return to main menu"; do
-                  case $DiskHealthChoice in
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
 
+# Print an error (shell-escaped args) and exit non-zero.
+die() {
+  printf '%sError:%s' "$RED" "$RESET" >&2
+  printf ' %q' "$@" >&2
+  printf '\n' >&2
+  exit 1
+}
 
-                    "Test disks" ) while true; do
-                        echo -e "\n"
-                        echo "Enter the last letter of the disk you want to test (example : b for /dev/sdb) :"
-                        read -r DiskLetter
-                        while true; do
-                        echo -e "\n"
-                        echo "Select test length :"
-                        select TestLength in "Short" "Long" "Check tests time"; do
-                            case $TestLength in
+# Print a warning to stderr.
+warn() { echo "${YELLOW}Warning:${RESET} $*" >&2; }
 
-                            Short ) smartctl -t short /dev/sd"$DiskLetter"
-                                echo -e "\n"
-                                echo "Test another disk ?"
-                                select yn in "Yes" "No"; do
-                                    case $yn in
-                                        "Yes" ) break 3;;
-                                        "No" ) break 5;;
-                                    esac
+# Pause execution until the user presses Enter.
+pause() { read -r -p "Press Enter to continue..." _; }
 
-                            done;;
+# Ensure a required command exists on PATH, otherwise exit.
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Missing dependency: '$1'"
+}
 
-                            Long ) smarctl -t long /dev/sd"$DiskLetter";
-                                echo -e "\n"
-                                echo "Test another disk ?"
-                                select yn in "Yes" "No"; do
-                                    case $yn in
-                                        "Yes" ) break 3;;
-                                        "No" ) break 5;;
+# Generic handler for unexpected command failures.
+on_err() { warn "Something failed (exit code $?)."; }
+trap on_err ERR
 
-                                    esac
+# List whole-disk devices in a user-friendly format for selection.
+list_disks() {
+  # Only whole disks; exclude zram/loop.
+  # (mmcblk can stay; it just may not support SMART, but it's still a disk.)
+  lsblk -dpno NAME,TYPE,SIZE,MODEL |
+    awk '$2=="disk" && $1 !~ /\/dev\/(loop|zram|mmcblk)/ { $2=""; print }'
+}
 
-                                done;;
+# Present an interactive disk picker; echo selected /dev/... to stdout.
+pick_disk() {
+  local disks=()
+  local line dev
 
-                            "Check tests time" )
-                                echo -e "\n"
-                                smartctl -c /dev/sd"$DiskLetter" | grep -i 'recommended' | sed '1 i\ Short self-test routine for /dev/sd'"$DiskLetter"'' | sed '3 i\ Extended (long) self-test routine for /dev/sd'"$DiskLetter"''; break;;
+  mapfile -t disks < <(list_disks)
+  ((${#disks[@]})) || die "No disks found via lsblk."
 
-                            esac
-                        done
-                        done
-                    done;;
+  {
+    echo
+    echo "${YELLOW}Select a disk:${RESET}"
+  } >&2
 
-                    "Check disks" ) while true; do
-                        echo -e "\n"
-                        echo "Enter the last letter of the disk you want to check (example : b for /dev/sdb) :"
-                        read -r DiskLetter
-                        echo -e "\n"
-                        smartctl /dev/sd"$DiskLetter" -HA
-                        echo -e "\n"
-                        echo "Check another disk ?"
-                        select yn in "Yes" "No"; do
-                                    case $yn in
-                                        "Yes" ) break;;
-                                        "No" ) break 3;;
-                                    esac
-                        done
-                        done;;
+  select line in "${disks[@]}" "Cancel"; do
+    case "$REPLY" in
+    '' | *[!0-9]*)
+      echo "Enter a number." >&2
+      continue
+      ;;
+    esac
 
-            "Return to main menu" ) break 2;;
-
-            esac
-            done
-            done
-
-        else echo -e "\n"
-        echo "This option requires smartmontools installed on your system."
-        echo "Install smartmontools package now ?"
-        select yn in "Yes" "No"; do
-            case $yn in
-
-            Yes )sudo pacman -S smartmontools;;
-            No ) break;;
-
-            esac
-        done
-
+    if ((REPLY >= 1 && REPLY <= ${#disks[@]})); then
+      dev="${line%% *}"
+      printf '%s\n' "$dev" # ONLY stdout output
+      return 0
+    elif ((REPLY == ${#disks[@]} + 1)); then
+      return 1
+    else
+      echo "${RED}Invalid selection.${RESET}" >&2
     fi
+  done
+}
 
+# Validate the selected device is a whole-disk block device (and warn if not root).
+validate_disk() {
+  local dev="$1"
+  local type
 
-    exec $(dirname $(dirname $(realpath $0)))/run.sh -q
+  type="$(lsblk -dno TYPE "$dev" 2>/dev/null || true)"
+  [[ "$type" == "disk" ]] || die "Not a whole disk:" "$dev"
 
+  [[ -b "$dev" ]] || die "Not a block device: $dev"
+  [[ "$(lsblk -dno TYPE "$dev" 2>/dev/null)" == "disk" ]] || die "Not a whole disk: $dev"
+
+  # smartctl usually needs root for full info and tests
+  if [[ $EUID -ne 0 ]]; then
+    warn "Not running as root. You may be prompted for sudo, or smartctl may be limited."
+  fi
+}
+
+# Run smartctl, using sudo automatically if not root.
+run_smartctl() {
+  # Runs smartctl via sudo if not root
+  if [[ $EUID -eq 0 ]]; then
+    smartctl "$@"
+  else
+    sudo smartctl "$@"
+  fi
+}
+
+# Start a SMART self-test (short or long) on the selected disk.
+start_test() {
+  local dev="$1"
+  local kind="$2" # short|long
+
+  validate_disk "$dev"
+
+  echo
+  echo "${GREEN}Starting $kind self-test on $dev...${RESET}"
+  if ! run_smartctl -t "$kind" "$dev"; then
+    die "smartctl failed to start the $kind test on $dev"
+  fi
+}
+
+# Show SMART health/attributes and a simple PASS/FAIL message.
+check_health() {
+  local dev="$1"
+
+  validate_disk "$dev"
+
+  echo
+  echo "${GREEN}SMART health for $dev:${RESET}"
+  if ! run_smartctl -H -A "$dev"; then
+    die "smartctl health check failed for $dev"
+  fi
+
+  if run_smartctl -H "$dev" | grep -qi PASSED; then
+    echo "${GREEN}Drive reports HEALTHY.${RESET}"
+  else
+    echo "${RED}Drive reports PROBLEMS or FAILING state!${RESET}"
+  fi
+}
+
+# Print the drive's recommended short/long self-test durations.
+show_test_times() {
+  local dev="$1"
+
+  validate_disk "$dev"
+
+  echo
+  echo "${GREEN}Recommended test times for $dev:${RESET}"
+  # smartctl -c output differs a bit across drives; this keeps it simple/robust
+  if ! run_smartctl -c "$dev" | grep -i -E 'recommended.*self-test|short.*self-test|extended.*self-test|long.*self-test'; then
+    warn "Could not extract recommended times. Showing full capabilities output instead:"
+    run_smartctl -c "$dev" || true
+  fi
+}
+
+# Prompt for a yes/no answer; returns 0 for yes, 1 for no.
+yes_no() {
+  local prompt="$1"
+  local ans
+  while true; do
+    read -r -p "${YELLOW}${prompt}${RESET} [y/N]: " ans
+    case "$ans" in
+    [yY]) return 0 ;;
+    [nN] | "") return 1 ;;
+    *) echo "${RED}Invalid selection.${RESET}" ;;
+    esac
+  done
+}
+
+# Menu flow for starting SMART self-tests on disks.
+test_disks_menu() {
+  while true; do
+    local dev
+    dev="$(pick_disk)" || return 0
+
+    while true; do
+      echo
+      echo "${YELLOW}Select test length for $dev:${RESET}"
+      select t in "Short" "Long" "Check tests time" "Back"; do
+        case "$REPLY" in
+        1)
+          start_test "$dev" short
+          break
+          ;;
+        2)
+          start_test "$dev" long
+          break
+          ;;
+        3)
+          show_test_times "$dev"
+          pause
+          break
+          ;;
+        4) return 0 ;;
+        *) echo "${RED}Invalid selection.${RESET}" ;;
+        esac
+      done
+
+      echo
+      if yes_no "Test another disk?"; then
+        break # back to pick_disk
+      else
+        return 0
+      fi
+    done
+  done
+}
+
+# Menu flow for checking SMART health on disks.
+check_disks_menu() {
+  while true; do
+    local dev
+    dev="$(pick_disk)" || return 0
+
+    check_health "$dev"
+    echo
+    if ! yes_no "Check another disk?"; then
+      return 0
+    fi
+  done
+}
+
+# Top-level menu routing between test/check actions.
+main_menu() {
+  while true; do
+    echo
+    echo "${YELLOW}Disk SMART menu:${RESET}"
+    select choice in "Test disks" "Check disks" "Return to main menu"; do
+      case "$REPLY" in
+      1)
+        test_disks_menu
+        break
+        ;;
+      2)
+        check_disks_menu
+        break
+        ;;
+      3) return 0 ;;
+      *) echo "${RED}Invalid selection.${RESET}" ;;
+      esac
+    done
+  done
+}
+
+# ---- entrypoint ----
+need_cmd lsblk
+need_cmd smartctl
+need_cmd awk
+need_cmd grep
+
+main_menu
+
+exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
