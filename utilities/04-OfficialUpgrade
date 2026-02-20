@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
-    echo -e "\n"
-    echo "Upgrading official packages..."
-    sudo pacman -Syu
+echo -e "\n${GREEN}Upgrading official packages...${RESET}"
 
+sudo pacman -Syu
 
-    exec $(dirname $(dirname $(realpath $0)))/run.sh -q
+exec $(dirname $(dirname $(realpath $0)))/run.sh -q
