@@ -1,25 +1,51 @@
 #!/usr/bin/env bash
 
-# TODO: Use confirmation helper from utility 10 here
-echo -e "\n"
-echo "Orphaned packages :"
-pacman -Qtd
-if [[ -n $(pacman -Qtd) ]]; then
-  echo -e "\n"
-  echo "Remove orphaned packages ?"
-  select yn in "Yes" "No"; do
-    case $yn in
-    Yes)
-      echo "Removing orphaned packages..."
-      pacman -Qtdq | sudo pacman -Rns -
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+# Prompt for a boolean (yes/no) response
+prompt_boolean() {
+  local prompt_text="$1"
+  local __resultvar="$2"
+  local answer
+
+  while true; do
+    read -r -p "$prompt_text [y/N]: " answer
+    echo
+    case "$answer" in
+    [yY])
+      printf -v "$__resultvar" true
       break
       ;;
-
-    No) break ;;
+    [nN] | "")
+      printf -v "$__resultvar" false
+      break
+      ;;
+    *) printf "%b\n\n" "${RED}Invalid selection.${RESET}" ;;
     esac
   done
+}
+
+echo -e "\n${GREEN}Orphaned packages:${RESET}"
+
+if pacman -Qtdq &>/dev/null; then
+  # List orphaned packages
+  pacman -Qtdq
+  echo
+
+  # Remove orphaned packages after confirmation
+  prompt_boolean "${YELLOW}Remove orphaned packages?${RESET}" confirmation
+  if $confirmation; then
+    echo -e "${GREEN}Removing orphaned packages...${RESET}"
+    pacman -Qtdq | sudo pacman -Rns -
+  else
+    echo -e "${GREEN}Skipping removal of orphaned packages...${RESET}"
+  fi
 else
-  echo "No orphaned packages found."
+  echo -e "${GREEN}No orphaned packages found.${RESET}"
 fi
 
+# Go back to maintenance menu
 exec $(dirname $(dirname $(realpath $0)))/run.sh -q
