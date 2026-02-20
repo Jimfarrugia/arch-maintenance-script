@@ -1,39 +1,52 @@
 #!/usr/bin/env bash
 
-# TODO: Fix this bullshit...
-echo -e "\n"
-if pacman -Qs "yay" | grep -q 'yay'; then
-  if [ "$EUID" = 0 ]; then
-    echo "Please don't run this option while on superuser mode."
-    echo "Run as non-superuser or return to main menu ?"
-    select yn in "Run" "Return"; do
-      case $yn in
-      Run)
-        echo -e "\n"
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+if pacman -Q yay &>/dev/null; then
+  if [[ $EUID -eq 0 ]]; then
+    echo -e "\n${RED}WARNING:${RESET} ${YELLOW}superuser mode detected.${RESET}"
+    echo -e "\nPlease don't run this option while in superuser mode."
+    echo -e "\n${YELLOW}Run as a non-superuser or return to main menu?${RESET}"
+
+    select yn in "Run as a non-superuser" "Back to menu"; do
+      case "$yn" in
+      "Run as a non-superuser")
+        echo
         while true; do
-          echo "Enter non-root username :"
-          read Username
-          if [[ $Username = root ]]; then
-            echo "ERROR : don't enter root username."
+          read -r -p "Enter non-root username: " Username
+          if [[ -z "$Username" ]]; then
+            echo "ERROR: username cannot be empty."
+          elif [[ "$Username" == "root" ]]; then
+            echo "ERROR: don't enter root username."
           else
-            echo -e "\n"
-            su -c "yay -Sua" $Username
+            echo
+            su - "$Username" -c 'yay -Sua'
             break
           fi
         done
-        break 2
+        break
         ;;
-      Return) break 2 ;;
+      "Back to menu")
+        break
+        ;;
+      *)
+        echo "Invalid selection."
+        ;;
       esac
     done
+
   else
-    echo "Upgrading AUR packages..."
-    yay
-    break
+    echo -e "${GREEN}Upgrading AUR packages...${RESET}"
+    yay -Sua
   fi
 else
+  echo -e "\n${RED}Yay is missing...${RESET} ${YELLOW}Go install yay first.${RESET}\n"
   echo "This option uses 'Yet another yogurt' (yay) to upgrade your AUR packages."
-  echo "The yay package can be found in the AUR repository at the following link : https://aur.archlinux.org/packages/yay/"
+  echo "The yay package can be found in the AUR repository at the following link:"
+  echo "https://aur.archlinux.org/packages/yay/"
 fi
 
-exec $(dirname $(dirname $(realpath $0)))/run.sh -q
+exec "$(dirname "$(dirname "$(realpath "$0")")/run.sh")" -q
