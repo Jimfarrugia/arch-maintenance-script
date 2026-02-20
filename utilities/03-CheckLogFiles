@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-    echo -e "\n"
-    echo "Checking for errors..."
-    echo "If needed, press Q to exit."
-    echo -e "\n"
-    journalctl -p 3 -b
+echo -e "\n"
+echo "Checking for errors..."
+echo "If needed, press Q to exit."
+echo -e "\n"
 
+journalctl -p 3 -b -e
 
-    exec $(dirname $(dirname $(realpath $0)))/run.sh -q
+exec $(dirname $(dirname $(realpath $0)))/run.sh -q
