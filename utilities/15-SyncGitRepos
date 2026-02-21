@@ -8,8 +8,8 @@ REPOS=(
   "$HOME/Pictures/Wallpaper"
   "$HOME/Projects/arch-setup-script"
   "$HOME/Projects/arch-maintenance-script"
+  "$HOME/Projects/theme-switcher"
   "$HOME/Gists/linux-notes"
-  "$HOME/theme_switcher"
 )
 
 # -------- Go back --------
