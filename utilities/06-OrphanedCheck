@@ -44,7 +44,7 @@ if pacman -Qtdq &>/dev/null; then
     echo -e "${GREEN}Skipping removal of orphaned packages...${RESET}"
   fi
 else
-  echo -e "${GREEN}No orphaned packages found.${RESET}"
+  echo -e "\n${GREEN}No orphaned packages found.${RESET}"
 fi
 
 # Go back to maintenance menu
