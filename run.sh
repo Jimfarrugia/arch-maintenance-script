@@ -57,8 +57,9 @@ MENU_ITEMS=(
   "Clean temporary files||util:08-CleanTempFiles"
   "Clean log files||util:09-CleanLogFiles"
   "Update mirror list|reflector|util:10-Mirrorlist"
-  "Check disks health|smartmontools|util:11-DisksCheck"
-  "Add new packages to setup script|gum|util:12-UpdatePackageList"
+  "Update Betterfox|curl|util:11-Betterfox"
+  "Check disks health|smartmontools|util:12-DisksCheck"
+  "Add new packages to setup script|gum|util:13-UpdatePackageList"
   "Reboot||shell:reboot"
   "Quit||exit"
 )

@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+TMP_DIR="$(mktemp -d)"
+DOTFILES_DIR="${HOME}/dotfiles"
+FIREFOX_DOTFILES_DIR="$DOTFILES_DIR/_unstowed/mozilla/firefox/profile.default-release"
+FIREFOX_PROFILE_BASE="${HOME}/.config/mozilla/firefox"
+FIREFOX_PROFILE_DIR=$(find "$FIREFOX_PROFILE_BASE" -maxdepth 1 -type d -name "*.default-release" | head -n 1)
+
+BETTERFOX_URL="https://raw.githubusercontent.com/yokoffing/Betterfox/refs/heads/main/user.js"
+BETTERFOX_DOWNLOADED="${TMP_DIR}/betterfox.user.js"
+BETTERFOX_OVERRIDES="$FIREFOX_DOTFILES_DIR/betterfox-overrides.js"
+BETTERFOX_PATCHED="${TMP_DIR}/user.js"
+
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
+
+go_back() { exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q; }
+
+# Make sure dotfiles dir and firefox config dir exist
+if [[ ! -d "$DOTFILES_DIR" ]]; then
+  echo -e "\n${RED}Error:${RESET} Couldn't find dotfiles directory at ${YELLOW}${DOTFILES_DIR}${RESET}."
+  go_back
+elif [[ ! -d "$FIREFOX_PROFILE_BASE" ]]; then
+  echo -e "\n${RED}Error:${RESET} Couldn't find firefox config directory at ${YELLOW}${FIREFOX_PROFILE_BASE}${RESET}."
+  go_back
+elif [[ ! -d "$FIREFOX_PROFILE_DIR" ]]; then
+  echo -e "\n${RED}Error:${RESET} Couldn't find firefox profile directory at ${YELLOW}${FIREFOX_PROFILE_DIR}${RESET}."
+  go_back
+elif [[ ! -d "$FIREFOX_DOTFILES_DIR" ]]; then
+  echo -e "\n${RED}Error:${RESET} Couldn't find dotfiles firefox directory at ${YELLOW}${FIREFOX_DOTFILES_DIR}${RESET}."
+  go_back
+elif [[ ! -f "$BETTERFOX_OVERRIDES" ]]; then
+  echo -e "\n${RED}Error:${RESET} Couldn't find overrides file at ${YELLOW}${BETTERFOX_OVERRIDES}${RESET}."
+  go_back
+fi
+
+# Download latest version of betterfox user.js
+echo -e "\n${GREEN}Downloading Betterfox user.js...${RESET}"
+curl -fsSL "$BETTERFOX_URL" -o "$BETTERFOX_DOWNLOADED"
+
+# Convert CRLF to LF to avoid ^M issues
+sed -i 's/\r$//' "$BETTERFOX_DOWNLOADED"
+
+# Basic sanity check (avoid overwriting with an HTML error page, etc.)
+if ! grep -qE '^\s*user_pref\(' "$BETTERFOX_DOWNLOADED"; then
+  echo -e "\n${RED}Error:${RESET} Downloaded file doesn't look like a Firefox user.js (no user_pref() found)."
+  go_back
+fi
+
+# Patch the downloaded file with my overrides
+extract_prefs_after_anchor_until_header() {
+  local anchor="$1"
+  awk -v anchor="$anchor" '
+    index($0, anchor) { inside=1; next }
+    inside && $0 ~ /^\/\*{3,}/ { exit }     # stop at next /**** header
+    inside { print }
+  ' "$BETTERFOX_OVERRIDES" | grep -E '^[[:space:]]*user_pref\(' || true
+}
+
+extract_prefs_after_anchor_to_eof() {
+  local anchor="$1"
+  awk -v anchor="$anchor" '
+    index($0, anchor) { inside=1; next }
+    inside { print }
+  ' "$BETTERFOX_OVERRIDES" | grep -E '^[[:space:]]*user_pref\(' || true
+}
+
+PERSONAL_BLOCK="$(extract_prefs_after_anchor_until_header "Enter your personal overrides below this line:")"
+SMOOTHFOX_BLOCK="$(extract_prefs_after_anchor_to_eof "Enter your scrolling overrides below this line:")"
+
+# Fallbacks if the overrides file doesn’t contain those anchor lines:
+if [[ -z "$PERSONAL_BLOCK" ]]; then
+  PERSONAL_BLOCK="$(awk '
+    /START: MY OVERRIDES/ {inside=1; next}
+    /SECTION: SMOOTHFOX/ {exit}
+    inside {print}
+  ' "$BETTERFOX_OVERRIDES" | grep -E '^[[:space:]]*user_pref\(' || true)"
+fi
+
+if [[ -z "$SMOOTHFOX_BLOCK" ]]; then
+  SMOOTHFOX_BLOCK="$(awk '
+    /SECTION: SMOOTHFOX/ {inside=1; next}
+    /END: BETTERFOX/ {exit}
+    inside {print}
+  ' "$BETTERFOX_OVERRIDES" | grep -E '^[[:space:]]*user_pref\(' || true)"
+fi
+
+if [[ -z "$PERSONAL_BLOCK" && -z "$SMOOTHFOX_BLOCK" ]]; then
+  echo -e "\n${RED}Error:${RESET} No overrides found in ${YELLOW}${BETTERFOX_OVERRIDES}${RESET}."
+  go_back
+fi
+
+# Inject blocks into Betterfox user.js
+awk -v personal="$PERSONAL_BLOCK" -v smooth="$SMOOTHFOX_BLOCK" '
+  function print_block(block) {
+    if (block == "") return
+    print ""
+    n = split(block, lines, "\n")
+    for (i = 1; i <= n; i++) print lines[i]
+    print ""
+  }
+
+  {
+    print
+
+    if (!did_personal && index($0, "Enter your personal overrides below this line:") > 0) {
+      print_block(personal)
+      did_personal = 1
+    }
+
+    if (!did_smooth && index($0, "Enter your scrolling overrides below this line:") > 0) {
+      print_block(smooth)
+      did_smooth = 1
+    }
+  }
+' "$BETTERFOX_DOWNLOADED" >"$BETTERFOX_PATCHED"
+
+# warn if an anchor wasn’t found in the downloaded Betterfox file
+if ! grep -q "Enter your personal overrides below this line:" "$BETTERFOX_DOWNLOADED"; then
+  echo -e "\n${YELLOW}Warning:${RESET} Personal overrides anchor not found in downloaded Betterfox user.js."
+fi
+if ! grep -q "Enter your scrolling overrides below this line:" "$BETTERFOX_DOWNLOADED"; then
+  echo -e "\n${YELLOW}Warning:${RESET} Smoothfox overrides anchor not found in downloaded Betterfox user.js."
+fi
+
+echo -e "${GREEN}Patched Betterfox user.js with overrides.${RESET}"
+
+# Copy the patched user.js file to (and replace) the user.js in dotfiles
+cp "$BETTERFOX_PATCHED" "$FIREFOX_DOTFILES_DIR/user.js" &&
+  echo -e "${GREEN}The user.js file was updated in dotfiles.${RESET}"
+
+# Copy the patched user.js file to (and replace) the currently active user.js file
+cp "$BETTERFOX_PATCHED" "$FIREFOX_PROFILE_DIR/user.js" &&
+  echo -e "${GREEN}The active user.js file was updated.${RESET}"
+
+# Commit and push the new user.js to the dotfiles repo (from the $DOTFILES_DIR path)
+echo -e "${GREEN}Committing and pushing new user.js in dotfiles...${RESET}"
+
+cd "$DOTFILES_DIR" || go_back
+git add "$FIREFOX_DOTFILES_DIR/user.js"
+
+if git diff --cached --quiet; then
+  echo -e "${YELLOW}No changes to commit.${RESET}"
+else
+  git commit -m "update betterfox user.js" &&
+    git push &&
+    echo -e "${GREEN}Dotfiles updated and pushed.${RESET}"
+fi
+
+echo -e "\n${GREEN}The Betterfox user.js file was updated in dotfiles and in the active firefox profile."
+
+# Return to menu
+go_back
