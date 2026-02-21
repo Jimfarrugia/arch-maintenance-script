@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+LOGS_DIR="/var/log"
+BACKUP_DIR_GLOB="backup_*"
+BACKUP_EXPIRY_DAYS=7
+
+# Prompt for a yes/no answer; returns 0 for yes, 1 for no.
+yes_no() {
+  local prompt="$1"
+  local ans
+  while true; do
+    read -r -p "${YELLOW}${prompt}${RESET} [y/N]: " ans
+    case "$ans" in
+    [yY]) return 0 ;;
+    [nN] | "") return 1 ;;
+    *) echo "${RED}Invalid selection.${RESET}" ;;
+    esac
+  done
+}
+
+# Convert bytes to human readable (fallback if numfmt missing)
+to_hr() {
+  local bytes="$1"
+  if command -v numfmt &>/dev/null; then
+    numfmt --to=iec "$bytes"
+  else
+    echo "${bytes} bytes"
+  fi
+}
+
+if [[ ! -d "$LOGS_DIR" ]]; then
+  echo -e "\n${RED}Could not find logs directory at ${RESET}${YELLOW}${LOGS_DIR}${RESET}${RED}...${RESET}"
+  exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+fi
+
+# Validate sudo once
+if ! sudo -v; then
+  echo -e "\n${RED}sudo authentication failed.${RESET}"
+  exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+fi
+
+# --- Pre-calc sizes & counts (what we intend to change) ---
+
+# 1) *.log files that will be truncated
+log_count=$(
+  sudo find "$LOGS_DIR" -type f -name "*.log" -printf '.' 2>/dev/null | wc -c
+)
+log_bytes_before=$(
+  sudo find "$LOGS_DIR" -type f -name "*.log" -printf '%s\n' 2>/dev/null |
+    awk '{s+=$1} END{print s+0}'
+)
+
+# 2) files older than BACKUP_EXP_DAYS inside backup_* directories
+# We match files under /var/log/backup_*/** (recursively).
+backup_file_count=$(
+  sudo find "$LOGS_DIR" -mindepth 2 -type f -path "$LOGS_DIR/$BACKUP_DIR_GLOB/*" -mtime +"$BACKUP_EXP_DAYS" -printf '.' 2>/dev/null | wc -c
+)
+backup_bytes_before=$(
+  sudo find "$LOGS_DIR" -mindepth 2 -type f -path "$LOGS_DIR/$BACKUP_DIR_GLOB/*" -mtime +"$BACKUP_EXP_DAYS" -printf '%s\n' 2>/dev/null |
+    awk '{s+=$1} END{print s+0}'
+)
+
+total_planned=$((log_bytes_before + backup_bytes_before))
+
+# Report what’s going on
+echo -e "\n${GREEN}Log cleanup targets:${RESET}"
+echo -e "${GREEN}- ${YELLOW}${log_count}${RESET}${GREEN} *.log file(s) will be truncated (${YELLOW}$(to_hr "$log_bytes_before")${RESET}${GREEN}).${RESET}"
+echo -e "${GREEN}- ${YELLOW}${backup_file_count}${RESET}${GREEN} file(s) older than ${YELLOW}${BACKUP_EXP_DAYS}${RESET}${GREEN} days inside ${YELLOW}${LOGS_DIR}/${BACKUP_DIR_GLOB}/...${RESET}${GREEN} will be deleted (${YELLOW}$(to_hr "$backup_bytes_before")${RESET}${GREEN}).${RESET}"
+echo -e "${GREEN}Total estimated reclaimed: ${YELLOW}$(to_hr "$total_planned")${RESET}${GREEN}.${RESET}"
+
+# Warn about clearing the logs
+echo -e "\n${RED}WARNING:${RESET} This will:"
+echo -e "  - truncate all ${YELLOW}*.log${RESET} files in ${YELLOW}${LOGS_DIR}${RESET} (remove all content)."
+echo -e "  - delete files older than ${YELLOW}${BACKUP_EXP_DAYS}${RESET} days inside ${YELLOW}${LOGS_DIR}/${BACKUP_DIR_GLOB}${RESET} directories."
+echo -e "NOTE: Systemd journal is not affected by this.\n"
+
+if ! yes_no "Proceed with cleanup?"; then
+  echo -e "\n${GREEN}Skipping cleaning logs.${RESET}"
+  exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+fi
+
+# --- Perform cleanup ---
+
+# Truncate *.log files and count how many we actually touched
+# (truncate returns success per file; count is easiest by re-finding after to confirm)
+sudo find "$LOGS_DIR" -type f -name "*.log" -exec truncate -s 0 {} \; 2>/dev/null
+
+# Delete old backup files
+sudo find "$LOGS_DIR" -mindepth 2 -type f -path "$LOGS_DIR/$BACKUP_DIR_GLOB/*" -mtime +"$BACKUP_EXP_DAYS" -delete 2>/dev/null
+
+# --- Post-calc (exact reclaimed) ---
+
+log_bytes_after=$(
+  sudo find "$LOGS_DIR" -type f -name "*.log" -printf '%s\n' 2>/dev/null |
+    awk '{s+=$1} END{print s+0}'
+)
+backup_bytes_after=$(
+  sudo find "$LOGS_DIR" -mindepth 2 -type f -path "$LOGS_DIR/$BACKUP_DIR_GLOB/*" -mtime +"$BACKUP_EXP_DAYS" -printf '%s\n' 2>/dev/null |
+    awk '{s+=$1} END{print s+0}'
+)
+
+log_reclaimed=$((log_bytes_before - log_bytes_after))
+backup_reclaimed=$((backup_bytes_before - backup_bytes_after))
+total_reclaimed=$((log_reclaimed + backup_reclaimed))
+
+echo -e "\n${GREEN}Cleanup complete.${RESET}"
+echo -e "${GREEN}- Truncated ${YELLOW}${log_count}${RESET}${GREEN} *.log file(s), reclaimed ${YELLOW}$(to_hr "$log_reclaimed")${RESET}${GREEN}.${RESET}"
+echo -e "${GREEN}- Deleted ${YELLOW}${backup_file_count}${RESET}${GREEN} old backup file(s), reclaimed ${YELLOW}$(to_hr "$backup_reclaimed")${RESET}${GREEN}.${RESET}"
+echo -e "${GREEN}Total reclaimed: ${YELLOW}$(to_hr "$total_reclaimed")${RESET}${GREEN}.${RESET}"
+
+exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q

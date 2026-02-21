@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+total_bytes=0
+
+calculate_and_delete() {
+  local dir="$1"
+  if [[ -d "$dir" ]]; then
+    # Get total size of files older than 5 days (in bytes)
+    size=$(sudo find "$dir" -type f -atime +5 -printf "%s\n" 2>/dev/null | awk '{s+=$1} END{print s+0}')
+    # Add to total
+    total_bytes=$((total_bytes + size))
+    # Delete the files
+    sudo find "$dir" -type f -atime +5 -delete
+  fi
+}
+
+echo -e "\n${GREEN}Removing old temporary files...${RESET}"
+
+# Delete temporary files
+calculate_and_delete /var/tmp
+calculate_and_delete /tmp
+
+# Report the amount of restored space
+if [[ "$total_bytes" -gt 0 ]]; then
+  human_readable=$(numfmt --to=iec "$total_bytes")
+  echo -e "\n${GREEN}Restored approximately ${YELLOW}${human_readable}${RESET}${GREEN} of disk space.${RESET}"
+else
+  echo -e "\n${GREEN}No old temporary files found.${RESET}"
+fi
+
+# Go back to maintenance menu
+exec $(dirname $(dirname $(realpath $0)))/run.sh -q

@@ -10,10 +10,11 @@ Scan root dir with ncdu
 
 ---
 
-In utility 8, list disks with `lsblk` before asking which disk to test/check.
-
-Also fix it so it can work for nvme volumes.
+- Check git repos for un-synced changes
 
 ---
 
-- Check git repos for un-synced changes
+- use fzf for the main menu
+  - options should still be numbered so they can be searched by number
+
+- remove numbers from filenames
