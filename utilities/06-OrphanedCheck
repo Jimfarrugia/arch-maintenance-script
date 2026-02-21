@@ -28,9 +28,9 @@ prompt_boolean() {
   done
 }
 
-echo -e "\n${GREEN}Orphaned packages:${RESET}"
-
 if pacman -Qtdq &>/dev/null; then
+  echo -e "\n${GREEN}Orphaned packages:${RESET}"
+
   # List orphaned packages
   pacman -Qtdq
   echo
