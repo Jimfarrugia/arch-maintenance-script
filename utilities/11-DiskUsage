@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+# TODO: Select disk to analyse
+
+echo -e "\n${GREEN}Analyising file system with ncdu...${RESET}"
+echo -e "\n${GREEN}Note:${RESET} ${YELLOW}/mnt${YELLOW} ${GREEN}and${RESET} ${YELLOW}/media${RESET} ${GREEN}are excluded.${RESET}"
+echo
+
+sudo ncdu / --exclude /mnt --exclude /media
+
+exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
