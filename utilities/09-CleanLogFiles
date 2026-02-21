@@ -76,8 +76,8 @@ echo -e "${GREEN}Total estimated reclaimed: ${YELLOW}$(to_hr "$total_planned")${
 # Warn about clearing the logs
 echo -e "\n${RED}WARNING:${RESET} This will:"
 echo -e "  - truncate all ${YELLOW}*.log${RESET} files in ${YELLOW}${LOGS_DIR}${RESET} (remove all content)."
-echo -e "  - delete files older than ${YELLOW}${BACKUP_EXP_DAYS}${RESET} days inside ${YELLOW}${LOGS_DIR}/${BACKUP_DIR_GLOB}${RESET} directories."
-echo -e "NOTE: Systemd journal is not affected by this.\n"
+echo -e "  - delete files older than ${YELLOW}${BACKUP_EXP_DAYS}${RESET} days inside ${YELLOW}${LOGS_DIR}/${BACKUP_DIR_GLOB}${RESET} directories (rsync backup scripts' logs)."
+echo -e "${GREEN}NOTE:${RESET} Systemd journal is not affected by this.\n"
 
 if ! yes_no "Proceed with cleanup?"; then
   echo -e "\n${GREEN}Skipping cleaning logs.${RESET}"
