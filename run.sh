@@ -61,7 +61,8 @@ MENU_ITEMS=(
   "Check disk health|smartmontools|util:12-DisksCheck"
   "Update Betterfox|curl|util:13-Betterfox"
   "Add new packages to setup script|gum|util:14-UpdatePackageList"
-  "Sync Github repositories||util:15-SyncGitRepos"
+  "Update unstowed dotfiles||util:15-UpdateUnstowed"
+  "Sync Github repositories||util:16-SyncGitRepos"
   "Reboot||shell:reboot"
   "Quit||exit"
 )

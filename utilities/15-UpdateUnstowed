@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+UNSTOWED_DIR="${HOME}/dotfiles/_unstowed"
+
+declare -A LocalFiles
+LocalFiles["fstab"]="/etc/fstab"
+LocalFiles["crontab"]="/var/spool/cron/${USER}"
+LocalFiles[".zsh_history"]="${HOME}/.local/share/zsh/.zsh_history"
+
+go_back() { exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q; }
+
+# Prompt for a yes/no answer; returns 0 for yes, 1 for no.
+yes_no() {
+  local prompt="$1"
+  local ans
+  while true; do
+    read -r -p "${YELLOW}${prompt}${RESET} [y/N]: " ans
+    case "$ans" in
+    [yY]) return 0 ;;
+    [nN] | "") return 1 ;;
+    *) echo "${RED}Invalid selection.${RESET}" ;;
+    esac
+  done
+}
+
+# Detect system from installed packages
+for pkg in plasma-desktop hyprland; do
+  if pacman -Q "$pkg" &>/dev/null; then
+    case "$pkg" in
+    plasma-desktop)
+      system="desktop"
+      echo -e "\n${YELLOW}KDE${RESET} ${GREEN}detected. Updating unstowed ${YELLOW}desktop${RESET} ${GREEN}dotfiles...${RESET}"
+      ;;
+    hyprland)
+      system="Hyprland"
+      echo -e "\n${YELLOW}Hyprland${RESET} ${GREEN}detected. Updating unstowed ${YELLOW}thinkpad${RESET} ${GREEN}dotfiles...${RESET}"
+      ;;
+    esac
+    break
+  fi
+done
+
+# Get destination paths
+declare -A UnstowedDotfiles
+UnstowedDotfiles["fstab"]="${UNSTOWED_DIR}/fstab/${system}/fstab"
+UnstowedDotfiles["crontab"]="${UNSTOWED_DIR}/crontab/${system}/crontab"
+UnstowedDotfiles[".zsh_history"]="${UNSTOWED_DIR}/zsh_history/${system}/.zsh_history"
+
+echo -e "\n${GREEN}These files in the dotfiles repo will be replaced with the files on your system:${RESET}"
+
+# List the (local system's) paths of the files to be updated
+for val in "${LocalFiles[@]}"; do
+  echo "$val"
+done
+
+# Copy current file to dotfiles repo (overwrite existing) after confirmation
+echo
+if yes_no "Update dotfiles?"; then
+  echo
+
+  # Get sudo access
+  sudo -v || go_back
+
+  for key in "${!LocalFiles[@]}"; do
+    src=${LocalFiles[$key]}
+    dest=${UnstowedDotfiles[$key]}
+
+    # Source must exist
+    if [[ ! -e "$src" ]]; then
+      echo -e "${RED}${key}${RESET} missing on system: ${src}"
+      continue
+    fi
+
+    # Ensure destination directory exists
+    mkdir -p "$(dirname "$dest")"
+
+    # Copy (use sudo if source isn't readable/writable by user)
+    if [[ ! -r "$src" ]]; then
+      if sudo cp "$src" "$dest"; then
+        echo -e "${YELLOW}${key}${RESET} ${GREEN}updated.${RESET}"
+      else
+        echo -e "${RED}Failed to update ${key}.${RESET}"
+      fi
+    else
+      if cp "$src" "$dest"; then
+        echo -e "${YELLOW}${key}${RESET} ${GREEN}updated.${RESET}"
+      else
+        echo -e "${RED}Failed to update ${key}.${RESET}"
+      fi
+    fi
+  done
+else
+  echo -e "\n${GREEN}Skipping updating dotfiles.${RESET}"
+fi
+
+go_back
