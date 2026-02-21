@@ -37,7 +37,7 @@ for pkg in plasma-desktop hyprland; do
       echo -e "\n${YELLOW}KDE${RESET} ${GREEN}detected. Updating unstowed ${YELLOW}desktop${RESET} ${GREEN}dotfiles...${RESET}"
       ;;
     hyprland)
-      system="Hyprland"
+      system="thinkpad"
       echo -e "\n${YELLOW}Hyprland${RESET} ${GREEN}detected. Updating unstowed ${YELLOW}thinkpad${RESET} ${GREEN}dotfiles...${RESET}"
       ;;
     esac
