@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+set -u -o pipefail
+
+# -------- Config --------
+REPOS=(
+  "$HOME/dotfiles"
+  "$HOME/dotfiles/_gtk_themes"
+  "$HOME/Pictures/Wallpaper"
+  "$HOME/Projects/arch-setup-script"
+  "$HOME/Projects/arch-maintenance-script"
+  "$HOME/Gists/linux-notes"
+  "$HOME/theme_switcher"
+)
+
+# -------- Go back --------
+go_back() { exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q; }
+
+# -------- Pretty output --------
+if [[ -t 1 ]]; then
+  BOLD=$'\e[1m'
+  DIM=$'\e[2m'
+  RED=$'\e[31m'
+  GREEN=$'\e[32m'
+  YELLOW=$'\e[33m'
+  BLUE=$'\e[34m'
+  CYAN=$'\e[36m'
+  RESET=$'\e[0m'
+else
+  BOLD=""
+  DIM=""
+  RED=""
+  GREEN=""
+  YELLOW=""
+  CYAN=""
+  RESET=""
+fi
+
+info() { echo "${CYAN}ℹ${RESET} ${BLUE}$*${RESET}"; }
+ok() { echo "${GREEN}✅${RESET} $*"; }
+warn() { echo "${YELLOW}⚠${RESET} $*"; }
+err() { echo "${RED}❌${RESET} $*"; }
+
+# -------- Summary tracking --------
+# We store "repo|reason"
+NOT_SYNCED=()
+
+add_not_synced() {
+  local repo="$1" reason="$2"
+  NOT_SYNCED+=("${repo}|${reason}")
+}
+
+# -------- Helpers --------
+is_git_repo() {
+  git -C "$1" rev-parse --is-inside-work-tree &>/dev/null
+}
+
+default_remote() {
+  local repo="$1"
+  if git -C "$repo" remote get-url origin &>/dev/null; then
+    echo "origin"
+    return 0
+  fi
+  git -C "$repo" remote 2>/dev/null | head -n1
+}
+
+has_uncommitted_changes() {
+  local repo="$1"
+  [[ -n "$(git -C "$repo" status --porcelain)" ]]
+}
+
+has_unpushed_commits_any_branch() {
+  local repo="$1"
+  local line branch upstream
+  while IFS= read -r line; do
+    branch="${line%%|*}"
+    upstream="${line#*|}"
+
+    [[ -z "$upstream" ]] && continue
+
+    if ! git -C "$repo" rev-parse --verify "$upstream" &>/dev/null; then
+      return 0
+    fi
+
+    if [[ "$(git -C "$repo" rev-list --count "${upstream}..${branch}" 2>/dev/null || echo 0)" != "0" ]]; then
+      return 0
+    fi
+  done < <(git -C "$repo" for-each-ref --format='%(refname:short)|%(upstream:short)' refs/heads)
+
+  return 1
+}
+
+print_unpushed_summary() {
+  local repo="$1"
+  local line branch upstream count
+  while IFS= read -r line; do
+    branch="${line%%|*}"
+    upstream="${line#*|}"
+    [[ -z "$upstream" ]] && continue
+
+    if ! git -C "$repo" rev-parse --verify "$upstream" &>/dev/null; then
+      echo "  - ${branch}: upstream '${upstream}' missing (likely needs push / upstream set)"
+      continue
+    fi
+
+    count="$(git -C "$repo" rev-list --count "${upstream}..${branch}" 2>/dev/null || echo 0)"
+    if [[ "$count" != "0" ]]; then
+      echo "  - ${branch}: ${count} commit(s) not pushed (upstream: ${upstream})"
+    fi
+  done < <(git -C "$repo" for-each-ref --format='%(refname:short)|%(upstream:short)' refs/heads)
+}
+
+update_all_branches_ff_only() {
+  local repo="$1"
+  local current_branch detached=0
+
+  current_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  [[ -z "$current_branch" ]] && detached=1
+
+  git -C "$repo" fetch --all --prune || return 1
+
+  local line branch upstream
+  while IFS= read -r line; do
+    branch="${line%%|*}"
+    upstream="${line#*|}"
+
+    [[ -z "$upstream" ]] && continue
+
+    info "  Updating branch ${BOLD}${branch}${RESET} (ff-only from ${DIM}${upstream}${RESET})"
+
+    git -C "$repo" switch --quiet "$branch" || {
+      warn "  Could not switch to ${branch} (skipping)"
+      continue
+    }
+
+    if ! git -C "$repo" merge --ff-only "$upstream" &>/dev/null; then
+      warn "  ${branch} could not be fast-forwarded (diverged?) — leaving as-is"
+      # Not fatal for the whole repo, but it means it wasn't fully synchronized.
+      return 2
+    fi
+  done < <(git -C "$repo" for-each-ref --format='%(refname:short)|%(upstream:short)' refs/heads)
+
+  if ((detached)); then
+    git -C "$repo" switch --detach --quiet HEAD@{1} &>/dev/null || true
+  else
+    git -C "$repo" switch --quiet "$current_branch" &>/dev/null || true
+  fi
+
+  return 0
+}
+
+push_all() {
+  local repo="$1" remote="$2"
+
+  info "  Pushing all branches to ${BOLD}${remote}${RESET}"
+  git -C "$repo" push "$remote" --all || return 1
+
+  info "  Pushing tags to ${BOLD}${remote}${RESET}"
+  git -C "$repo" push "$remote" --tags || return 1
+
+  return 0
+}
+
+# -------- Cleanup / traps --------
+print_summary() {
+  echo
+  echo "${BOLD}${GREEN}Summary${RESET}"
+  if ((${#NOT_SYNCED[@]} == 0)); then
+    ok "All repos synchronized."
+    return 0
+  fi
+
+  warn "Repos not synchronized:"
+  local item repo reason
+  for item in "${NOT_SYNCED[@]}"; do
+    repo="${item%%|*}"
+    reason="${item#*|}"
+    echo " - ${repo}: ${reason}"
+  done
+}
+
+cleanup() {
+  # Ensure summary prints exactly once even if multiple signals occur.
+  if [[ "${_CLEANED_UP:-0}" == "1" ]]; then
+    go_back
+  fi
+  _CLEANED_UP=1
+
+  print_summary
+  go_back
+}
+
+trap cleanup EXIT INT TERM
+
+# -------- Main --------
+echo
+info "Checking and updating git repos…"
+echo
+
+for repo in "${REPOS[@]}"; do
+  if [[ ! -d "$repo" ]]; then
+    warn "Missing: ${DIM}${repo}${RESET} (skipping)"
+    add_not_synced "$repo" "path missing"
+    continue
+  fi
+
+  if ! is_git_repo "$repo"; then
+    warn "Not a git repo: ${DIM}${repo}${RESET} (skipping)"
+    add_not_synced "$repo" "not a git repository"
+    continue
+  fi
+
+  echo "${BOLD}${CYAN}▶${RESET} ${GREEN}${repo}${RESET}"
+
+  # Safety: don't touch repos mid-merge/rebase
+  if [[ -d "$repo/.git/rebase-apply" || -d "$repo/.git/rebase-merge" ]]; then
+    warn "  Repo is mid-rebase — skipping"
+    add_not_synced "$repo" "mid-rebase"
+    echo
+    continue
+  fi
+  if [[ -f "$repo/.git/MERGE_HEAD" ]]; then
+    warn "  Repo is mid-merge — skipping"
+    add_not_synced "$repo" "mid-merge"
+    echo
+    continue
+  fi
+
+  remote="$(default_remote "$repo")"
+  if [[ -z "${remote:-}" ]]; then
+    warn "  No remotes configured — skipping"
+    add_not_synced "$repo" "no remotes configured"
+    echo
+    continue
+  fi
+
+  dirty=0
+  if has_uncommitted_changes "$repo"; then
+    warn "  Uncommitted changes detected:"
+    git -C "$repo" status --porcelain | sed 's/^/    /'
+    dirty=1
+  fi
+
+  if has_unpushed_commits_any_branch "$repo"; then
+    warn "  Unpushed commits detected on one or more branches:"
+    print_unpushed_summary "$repo"
+    dirty=1
+  fi
+
+  if ((dirty)); then
+    warn "  Skipping pull/push for this repo."
+    add_not_synced "$repo" "local changes or unpushed commits"
+    echo
+    continue
+  fi
+
+  # Update all tracking branches (ff-only), then push all branches/tags.
+  update_all_branches_ff_only "$repo"
+  upd_rc=$?
+
+  if ((upd_rc == 1)); then
+    err "  Fetch/update failed."
+    add_not_synced "$repo" "fetch/update failed"
+    echo
+    continue
+  elif ((upd_rc == 2)); then
+    warn "  One or more branches diverged (not fast-forwardable)."
+    add_not_synced "$repo" "branch divergence (ff-only failed)"
+    echo
+    continue
+  fi
+
+  if ! push_all "$repo" "$remote"; then
+    err "  Push failed."
+    add_not_synced "$repo" "push failed"
+    echo
+    continue
+  fi
+
+  ok "  Done."
+  echo
+done
+
+# Normal end run cleanup via trap, printing summary and executing go_back.
