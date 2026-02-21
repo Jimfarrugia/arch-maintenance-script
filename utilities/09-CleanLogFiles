@@ -7,7 +7,7 @@ RESET=$'\e[0m'
 
 LOGS_DIR="/var/log"
 BACKUP_DIR_GLOB="backup_*"
-BACKUP_EXPIRY_DAYS=7
+BACKUP_EXP_DAYS=7
 
 # Prompt for a yes/no answer; returns 0 for yes, 1 for no.
 yes_no() {
