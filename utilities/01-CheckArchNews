@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
+DIM=$'\e[2m'
 GREEN=$'\e[32m'
+BLUE=$'\e[34m'
+CYAN=$'\e[36m'
 RESET=$'\e[0m'
 
 ARCH_RSS_FEED="https://archlinux.org/feeds/news/"
@@ -11,7 +14,7 @@ echo
 # Print clickable header
 printf '\e]8;;%s\a%s\e]8;;\a\n' \
   "$ARCH_NEWS_URL" \
-  "${GREEN}Arch Linux News:${RESET}"
+  "${GREEN}Arch Linux News:${RESET} ${DIM}(click a title to open the article)${RESET}"
 
 # Fetch and print latest news with pubDate formatted as dd.mm.yyyy
 curl -s "$ARCH_RSS_FEED" |
@@ -24,7 +27,7 @@ curl -s "$ARCH_RSS_FEED" |
     # Parse RFC822-ish date and format as dd.mm.yyyy (Arch feed uses "+0000")
     date_fmt="$(LC_ALL=C date -d "$pubdate" +'%d.%m.%Y' 2>/dev/null || echo '??.??.????')"
 
-    printf ' - %s \e]8;;%s\a%s\e]8;;\a\n' "$date_fmt" "$link" "$title"
+    printf ' - %s \e]8;;%s\a%s\e]8;;\a\n' "${CYAN}${date_fmt}${RESET}" "$link" "$title"
   done
 
 exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
