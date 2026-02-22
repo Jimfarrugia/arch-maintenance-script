@@ -1,16 +1,133 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 RED=$'\e[31m'
 GREEN=$'\e[32m'
 YELLOW=$'\e[33m'
+BLUE=$'\e[34m'
+CYAN=$'\e[36m'
 RESET=$'\e[0m'
 
-# TODO: Select disk to analyse
+go_back() { exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q; }
 
-echo -e "\n${GREEN}Analyising file system with ncdu...${RESET}"
-echo -e "\n${GREEN}Note:${RESET} ${YELLOW}/mnt${YELLOW} ${GREEN}and${RESET} ${YELLOW}/media${RESET} ${GREEN}are excluded.${RESET}"
+get_mountpoints() {
+  findmnt -rn -o TARGET,FSTYPE,SOURCE |
+    awk '
+      $2 ~ /^(proc|sysfs|devtmpfs|tmpfs|cgroup2?|pstore|securityfs|debugfs|tracefs|configfs|overlay|nsfs|rpc_pipefs|autofs|fusectl|mqueue|hugetlbfs)$/ { next }
+      $1 ~ /^\/(boot|efi)$/ { next }
+      $1 ~ /^\/boot\/efi$/ { next }
+      $1 ~ /^\/(run|proc|sys|dev)(\/|$)/ { next }
+      { print $1 "|" $2 "|" $3 }
+    '
+}
+
 echo
 
-sudo ncdu / --exclude /mnt --exclude /media
+mapfile -t mounts < <(get_mountpoints)
 
-exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
+if ((${#mounts[@]} == 0)); then
+  echo -e "${YELLOW}No suitable mountpoints detected; analysing /${RESET}"
+  target="/"
+else
+  echo -e "${YELLOW}Select a mountpoint to analyse with ncdu:${RESET}\n"
+
+  options=()
+  targets=()   # raw targets aligned with options (same indices)
+
+  max_tgt=0
+  max_fs=0
+  max_src=0
+
+  # First pass: widths (no colors)
+  for line in "${mounts[@]}"; do
+    IFS='|' read -r tgt fs src <<<"$line"
+    ((${#tgt} > max_tgt)) && max_tgt=${#tgt}
+    ((${#fs}  > max_fs )) && max_fs=${#fs}
+    ((${#src} > max_src)) && max_src=${#src}
+  done
+
+  # Second pass: build aligned + colored labels
+  for line in "${mounts[@]}"; do
+    IFS='|' read -r tgt fs src <<<"$line"
+
+    targets+=("$tgt")
+
+    # pad each field first (plain), then colorize
+    printf -v tgt_pad "%-*s" "$max_tgt" "$tgt"
+    printf -v fs_pad  "%-*s" "$max_fs"  "$fs"
+    printf -v src_pad "%-*s" "$max_src" "$src"
+
+    options+=("${BLUE}${tgt_pad}${RESET}  (${fs_pad})  ${CYAN}${src_pad}${RESET}")
+  done
+
+  # Force 1-column select menu
+  old_columns=${COLUMNS-}
+  COLUMNS=1
+
+  PS3=$'\n'"${YELLOW}Enter selection:${RESET} "
+  select choice in "${options[@]}" "Go Back"; do
+    if [[ "$REPLY" == "$((${#options[@]} + 1))" ]]; then
+      go_back
+    elif [[ "$REPLY" =~ ^[0-9]+$ ]] && (( REPLY >= 1 && REPLY <= ${#options[@]} )); then
+      target="${targets[REPLY-1]}"
+      break
+    else
+      echo -e "${RED}Invalid selection.${RESET}"
+    fi
+  done
+fi
+
+# restore columns
+if [[ -n "${old_columns-}" ]]; then
+  COLUMNS=$old_columns
+else
+  unset COLUMNS
+fi
+
+echo -e "\n${GREEN}Analysing:${RESET} ${YELLOW}${target}${RESET}\n"
+
+ncdu_args=(--one-file-system)
+
+if [[ "$target" == "/" ]]; then
+  echo -e "${GREEN}Note:${RESET} ${YELLOW}/mnt${RESET} ${GREEN}and${RESET} ${YELLOW}/media${RESET} ${GREEN}are excluded.${RESET}\n"
+  ncdu_args+=(--exclude /mnt --exclude /media)
+fi
+
+sudo ncdu "${ncdu_args[@]}" "$target"
+
+go_back
+  PS3=$'\n'"${YELLOW}Enter selection:${RESET} "
+  select choice in "${options[@]}" "Go Back"; do
+    if [[ "$choice" == "Go Back" ]]; then
+      go_back
+    elif [[ -n "${choice:-}" ]]; then
+      # Extract the mountpoint (first field) from the chosen label
+      target="${choice%%  (*}"
+      break
+    else
+      echo -e "${RED}Invalid selection.${RESET}"
+    fi
+  done
+fi
+
+# restore number of columns if it was set
+if [[ -n "${old_columns-}" ]]; then
+  COLUMNS=$old_columns
+else
+  unset COLUMNS
+fi
+
+echo -e "\n${GREEN}Analysing:${RESET} ${YELLOW}${target}${RESET}\n"
+
+# Default: stay within the selected filesystem so ncdu doesn’t walk into other mounts
+ncdu_args=(--one-file-system)
+
+# Only exclude /mnt and /media when analysing root (your original behaviour)
+if [[ "$target" == "/" ]]; then
+  echo -e "${GREEN}Note:${RESET} ${YELLOW}/mnt${RESET} ${GREEN}and${RESET} ${YELLOW}/media${RESET} ${GREEN}are excluded.${RESET}\n"
+  ncdu_args+=(--exclude /mnt --exclude /media)
+fi
+
+sudo ncdu "${ncdu_args[@]}" "$target"
+
+go_back
