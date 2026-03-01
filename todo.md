@@ -4,6 +4,10 @@ https://wiki.archlinux.org/title/System_maintenance
 
 ---
 
+Fix: Backup logs not being cleaned on kde/desktop
+
+---
+
 - use fzf for the main menu
   - options should still be numbered so they can be searched by number
 

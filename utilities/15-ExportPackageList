@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RESET=$'\e[0m'
+
+OUTPUT_FILE="$HOME/Downloads/package_list.txt"
+
+echo -e "\nExporting list of explicitly installed packages..."
+
+# Export list of explicitly installed packages
+pacman -Qe | cut -f 1 -d " " >"$OUTPUT_FILE" &&
+    echo -e "\n${GREEN}Package list saved to:${RESET} ${OUTPUT_FILE}"
+
+# Back to main menu
+exec "$(dirname "$(dirname "$(realpath "$0")")")/run.sh" -q
